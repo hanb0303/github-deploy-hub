@@ -179,15 +179,16 @@ export async function fetchGitHubUser(username: string): Promise<GitHubUser> {
 }
 
 export async function fetchGitHubRepos(username: string, force = false): Promise<ProjectItem[]> {
-  const cacheKey = `${CACHE_PREFIX}repos_${username}`;
+  const cacheKey = `${CACHE_PREFIX}raw_repos_${username}`;
+  let rawRepos: any[] | null = null;
   
   if (!force) {
     const cached = localStorage.getItem(cacheKey);
     if (cached) {
       try {
         const { timestamp, data } = JSON.parse(cached);
-        if (Date.now() - timestamp < CACHE_EXPIRY_MS) {
-          return data;
+        if (Date.now() - timestamp < CACHE_EXPIRY_MS && Array.isArray(data)) {
+          rawRepos = data;
         }
       } catch (e) {
         console.warn(e);
@@ -195,19 +196,30 @@ export async function fetchGitHubRepos(username: string, force = false): Promise
     }
   }
 
-  const res = await fetch(`https://api.github.com/users/${username}/repos?per_page=100&sort=updated`, {
-    headers: { 'Accept': 'application/vnd.github.v3+json' },
-  });
-  if (!res.ok) {
-    throw new Error('레포지토리 목록을 가져오지 못했습니다.');
+  if (!rawRepos) {
+    const res = await fetch(`https://api.github.com/users/${username}/repos?per_page=100&sort=updated`, {
+      headers: { 'Accept': 'application/vnd.github.v3+json' },
+    });
+    if (!res.ok) {
+      throw new Error('레포지토리 목록을 가져오지 못했습니다.');
+    }
+    rawRepos = await res.json();
+    try {
+      localStorage.setItem(cacheKey, JSON.stringify({
+        timestamp: Date.now(),
+        data: rawRepos,
+      }));
+    } catch (e) {
+      console.warn(e);
+    }
   }
 
-  const repos = await res.json();
+  // Always apply the latest user settings (folder, pin, description) in real-time
   const folderMap = getProjectFolderMap();
   const pinnedIds = getPinnedIds();
   const descMap = getCustomDescriptionMap();
 
-  const projects: ProjectItem[] = repos.map((repo: any) => {
+  const projects: ProjectItem[] = (rawRepos || []).map((repo: any) => {
     let deployUrl: string | null = null;
 
     if (repo.homepage && typeof repo.homepage === 'string') {
@@ -241,15 +253,6 @@ export async function fetchGitHubRepos(username: string, force = false): Promise
       updatedAt: repo.updated_at,
     };
   });
-
-  try {
-    localStorage.setItem(cacheKey, JSON.stringify({
-      timestamp: Date.now(),
-      data: projects,
-    }));
-  } catch (e) {
-    console.warn(e);
-  }
 
   return projects;
 }

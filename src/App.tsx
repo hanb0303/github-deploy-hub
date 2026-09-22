@@ -130,7 +130,7 @@ export function App() {
   const handleProjectFolderChange = (projectId: string | number, newFolderId: string) => {
     setProjectFolder(projectId, newFolderId);
     setProjects(prev => prev.map(p => {
-      if (p.id === projectId) {
+      if (String(p.id) === String(projectId)) {
         return { ...p, folderId: newFolderId };
       }
       return p;
@@ -159,7 +159,7 @@ export function App() {
 
     setProjects(prev => {
       const updatedProjects = prev.map(p => {
-        if (p.id === projectId) {
+        if (String(p.id) === String(projectId)) {
           return { ...p, isPinned: isNowPinned };
         }
         return p;
@@ -195,7 +195,7 @@ export function App() {
   const handleDescriptionChange = (projectId: string | number, newDesc: string) => {
     setCustomDescription(projectId, newDesc);
     setProjects(prev => prev.map(p => {
-      if (p.id === projectId) {
+      if (String(p.id) === String(projectId)) {
         return { ...p, description: newDesc };
       }
       return p;
