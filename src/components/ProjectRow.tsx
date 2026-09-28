@@ -5,9 +5,10 @@ import {
   Github, 
   Folder as FolderIcon, 
   ChevronDown, 
+  ChevronRight,
   Check, 
   Star, 
-  Pencil,
+  Pencil, 
   GripVertical 
 } from 'lucide-react';
 
@@ -96,6 +97,18 @@ export const ProjectRow: React.FC<ProjectRowProps> = ({
     }
   };
 
+  const handleRowClick = (e: React.MouseEvent) => {
+    // Only on mobile touch screens
+    if (window.innerWidth < 640 && isDeployed && project.deployUrl) {
+      const target = e.target as HTMLElement;
+      // Do not trigger if user tapped on interactive elements
+      if (target.closest('button') || target.closest('a') || target.closest('input')) {
+        return;
+      }
+      window.open(project.deployUrl, '_blank');
+    }
+  };
+
   return (
     <div
       draggable
@@ -103,7 +116,8 @@ export const ProjectRow: React.FC<ProjectRowProps> = ({
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
-      className={`group flex items-center justify-between px-3.5 py-3 rounded-2xl bg-white dark:bg-[#18191E] border transition-all duration-150 ${
+      onClick={handleRowClick}
+      className={`group flex items-center justify-between px-3 sm:px-3.5 py-2.5 sm:py-3 rounded-2xl bg-white dark:bg-[#18191E] border transition-all duration-150 cursor-pointer sm:cursor-default active:scale-[0.99] sm:active:scale-100 ${
         isDragOver 
           ? 'border-blue-500 ring-2 ring-blue-500/20 scale-[1.01]' 
           : 'border-gray-200/60 dark:border-white/5 hover:border-gray-300 dark:hover:border-white/10 hover:shadow-sm'
@@ -111,10 +125,10 @@ export const ProjectRow: React.FC<ProjectRowProps> = ({
     >
       
       {/* Left: Drag Handle, Star, Status, Name, Description */}
-      <div className="flex items-center gap-2.5 min-w-0 flex-1 pr-4">
-        {/* Grip Drag Handle */}
+      <div className="flex items-center gap-2 sm:gap-2.5 min-w-0 flex-1 pr-2 sm:pr-4">
+        {/* Grip Drag Handle (Desktop only) */}
         <div 
-          className="cursor-grab active:cursor-grabbing p-1 -ml-1 text-gray-300 hover:text-gray-500 dark:hover:text-gray-200 transition-colors"
+          className="hidden sm:block cursor-grab active:cursor-grabbing p-1 -ml-1 text-gray-300 hover:text-gray-500 dark:hover:text-gray-200 transition-colors shrink-0"
           title="드래그하여 순서 변경"
         >
           <GripVertical className="w-3.5 h-3.5" />
@@ -124,7 +138,7 @@ export const ProjectRow: React.FC<ProjectRowProps> = ({
         <button
           onClick={() => onTogglePin(project.id)}
           title={project.isPinned ? "상단 고정 해제" : "폴더 맨 위로 고정"}
-          className="p-1 rounded-lg text-gray-300 hover:text-amber-500 transition-colors"
+          className="p-1 rounded-lg text-gray-300 hover:text-amber-500 transition-colors shrink-0"
         >
           <Star className={`w-3.5 h-3.5 ${project.isPinned ? 'text-amber-500 fill-amber-500' : ''}`} />
         </button>
@@ -136,12 +150,12 @@ export const ProjectRow: React.FC<ProjectRowProps> = ({
           <span className="w-2 h-2 rounded-full bg-gray-300 dark:bg-neutral-600 shrink-0" title="미배포" />
         )}
 
-        {/* Project Name */}
-        <span className="font-bold text-sm text-gray-900 dark:text-white truncate shrink-0">
+        {/* Project Name: Expands freely on mobile, shrink-0 on desktop */}
+        <span className="font-bold text-sm text-gray-900 dark:text-white truncate min-w-0 sm:shrink-0">
           {project.name}
         </span>
 
-        {/* Editable Description */}
+        {/* Editable Description (Desktop only) */}
         {isEditingDesc ? (
           <input
             type="text"
@@ -176,17 +190,17 @@ export const ProjectRow: React.FC<ProjectRowProps> = ({
       </div>
 
       {/* Right: Folder Selector, Buttons */}
-      <div className="flex items-center gap-2.5 shrink-0">
+      <div className="flex items-center gap-1.5 sm:gap-2.5 shrink-0">
 
         {/* Custom Folder Dropdown Chip */}
         <div className="relative" ref={menuRef}>
           <button
             type="button"
             onClick={() => setIsMenuOpen(!isMenuOpen)}
-            className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-gray-100/80 dark:bg-white/5 hover:bg-gray-200/80 dark:hover:bg-white/10 text-[11px] font-medium text-gray-600 dark:text-gray-300 transition-colors"
+            className="flex items-center gap-1 sm:gap-1.5 px-2 sm:px-2.5 py-0.5 sm:py-1 rounded-full bg-gray-100/80 dark:bg-white/5 hover:bg-gray-200/80 dark:hover:bg-white/10 text-[10px] sm:text-[11px] font-medium text-gray-600 dark:text-gray-300 transition-colors"
           >
-            <FolderIcon className="w-3 h-3 text-gray-400" />
-            <span>{currentFolder?.name || '기타'}</span>
+            <FolderIcon className="w-2.5 h-2.5 sm:w-3 sm:h-3 text-gray-400" />
+            <span className="max-w-[48px] sm:max-w-none truncate">{currentFolder?.name || '기타'}</span>
             <ChevronDown className={`w-2.5 h-2.5 text-gray-400 transition-transform ${isMenuOpen ? 'rotate-180' : ''}`} />
           </button>
 
@@ -223,13 +237,13 @@ export const ProjectRow: React.FC<ProjectRowProps> = ({
           )}
         </div>
 
-        {/* Action button: Site Visit */}
+        {/* Action button: Site Visit (Desktop only - Mobile uses full row click + iOS arrow) */}
         {isDeployed ? (
           <a
             href={project.deployUrl!}
             target="_blank"
             rel="noreferrer"
-            className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-[#3182F6] hover:bg-[#1B64DA] text-white text-xs font-semibold shadow-sm transition-all"
+            className="hidden sm:inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-[#3182F6] hover:bg-[#1B64DA] text-white text-xs font-semibold shadow-sm transition-all"
           >
             <span>방문</span>
             <ArrowUpRight className="w-3 h-3" />
@@ -239,7 +253,7 @@ export const ProjectRow: React.FC<ProjectRowProps> = ({
             href={`${project.repoUrl}/settings/pages`}
             target="_blank"
             rel="noreferrer"
-            className="inline-flex items-center gap-1 px-2.5 py-1 text-xs text-gray-400 hover:text-blue-500"
+            className="hidden sm:inline-flex items-center gap-1 px-2.5 py-1 text-xs text-gray-400 hover:text-blue-500"
           >
             <span>배포</span>
             <ArrowUpRight className="w-3 h-3" />
@@ -252,10 +266,15 @@ export const ProjectRow: React.FC<ProjectRowProps> = ({
           target="_blank"
           rel="noreferrer"
           title="GitHub"
-          className="p-1.5 rounded-lg text-gray-400 hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-white/5 transition-colors"
+          className="p-1 sm:p-1.5 rounded-lg text-gray-400 hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-white/5 transition-colors"
         >
           <Github className="w-3.5 h-3.5" />
         </a>
+
+        {/* Mobile Arrow indicator (Apple iOS style) */}
+        {isDeployed && (
+          <ChevronRight className="w-3.5 h-3.5 text-gray-300 dark:text-gray-600 sm:hidden shrink-0 -mr-0.5" />
+        )}
 
       </div>
 

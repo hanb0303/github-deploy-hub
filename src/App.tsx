@@ -296,7 +296,7 @@ export function App() {
         totalDeployed={totalDeployed}
       />
 
-      <main className="max-w-6xl mx-auto px-5 sm:px-8 py-8 space-y-6">
+      <main className="max-w-6xl mx-auto px-3.5 sm:px-8 py-4 sm:py-8 space-y-4 sm:space-y-6">
         
         {/* Error notice */}
         {errorMsg && (

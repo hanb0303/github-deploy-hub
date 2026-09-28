@@ -37,10 +37,10 @@ export const Header: React.FC<HeaderProps> = ({
 
   return (
     <header className="sticky top-0 z-30 w-full bg-[#F9FAFB]/80 dark:bg-[#0E1015]/80 backdrop-blur-xl border-b border-gray-200/50 dark:border-white/5 transition-colors">
-      <div className="max-w-6xl mx-auto px-5 sm:px-8 h-18 py-4 flex items-center justify-between gap-4">
+      <div className="max-w-6xl mx-auto px-4 sm:px-8 py-3 sm:py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 sm:gap-4">
         
-        {/* Left: Brand / User Title */}
-        <div className="flex items-center gap-3">
+        {/* Left / Mobile Top Bar: Brand, Username, Count & Mobile Quick Controls */}
+        <div className="flex items-center justify-between gap-3 w-full sm:w-auto">
           {isEditingUser ? (
             <form onSubmit={handleUserSubmit} className="flex items-center gap-1.5">
               <input
@@ -49,39 +49,58 @@ export const Header: React.FC<HeaderProps> = ({
                 value={inputUser}
                 onChange={(e) => setInputUser(e.target.value)}
                 placeholder="GitHub ID 입력"
-                className="px-3 py-1.5 text-sm rounded-xl border border-blue-500 bg-white dark:bg-[#1c1e24] text-gray-900 dark:text-white outline-none w-32"
+                className="px-3 py-1 text-sm rounded-xl border border-blue-500 bg-white dark:bg-[#1c1e24] text-gray-900 dark:text-white outline-none w-32"
               />
               <button
                 type="submit"
-                className="px-2.5 py-1.5 text-xs font-semibold rounded-xl bg-blue-600 text-white"
+                className="px-2.5 py-1 text-xs font-semibold rounded-xl bg-blue-600 text-white"
               >
                 변경
               </button>
             </form>
           ) : (
-            <div className="flex items-center gap-2.5">
+            <div className="flex items-center gap-2 sm:gap-2.5">
               <h1 className="text-xl sm:text-2xl font-black tracking-tight text-gray-950 dark:text-white">
                 프로젝트
               </h1>
               <button
                 onClick={() => setIsEditingUser(true)}
                 title="GitHub ID 변경"
-                className="px-2.5 py-1 rounded-full bg-gray-200/70 dark:bg-white/10 hover:bg-gray-300 dark:hover:bg-white/15 text-xs font-semibold text-gray-700 dark:text-gray-300 transition-colors"
+                className="px-2.5 py-0.5 sm:py-1 rounded-full bg-gray-200/70 dark:bg-white/10 hover:bg-gray-300 dark:hover:bg-white/15 text-xs font-semibold text-gray-700 dark:text-gray-300 transition-colors"
               >
                 @{username}
               </button>
-              <span className="text-xs text-blue-600 dark:text-blue-400 font-semibold ml-1">
-                {totalDeployed}개 배포중
+              <span className="text-xs text-blue-600 dark:text-blue-400 font-semibold ml-0.5 sm:ml-1">
+                {totalDeployed}개
               </span>
             </div>
           )}
+
+          {/* Quick controls on mobile top right (Refresh, DarkMode) */}
+          <div className="flex items-center gap-1 sm:hidden">
+            <button
+              onClick={onRefresh}
+              disabled={isLoading}
+              title="새로고침"
+              className="p-1.5 rounded-full text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-white/5 transition-all"
+            >
+              <RotateCw className={`w-4 h-4 ${isLoading ? 'animate-spin text-blue-500' : ''}`} />
+            </button>
+            <button
+              onClick={onToggleDarkMode}
+              title={darkMode ? '라이트 모드' : '다크 모드'}
+              className="p-1.5 rounded-full text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-white/5 transition-all"
+            >
+              {darkMode ? <Sun className="w-4 h-4 text-amber-400" /> : <Moon className="w-4 h-4" />}
+            </button>
+          </div>
         </div>
 
-        {/* Right: Search & Minimal Controls */}
-        <div className="flex items-center gap-2.5">
+        {/* Right / Mobile Bottom Bar: Search & Desktop Controls */}
+        <div className="flex items-center gap-2.5 w-full sm:w-auto">
           
-          {/* Apple / Toss style Minimal Search */}
-          <div className="relative w-40 sm:w-60">
+          {/* Apple / Toss style Minimal Search: Full width on mobile, w-60 on desktop */}
+          <div className="relative w-full sm:w-60">
             <Search className="w-3.5 h-3.5 absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
             <input
               type="text"
@@ -92,24 +111,25 @@ export const Header: React.FC<HeaderProps> = ({
             />
           </div>
 
-          {/* Refresh */}
-          <button
-            onClick={onRefresh}
-            disabled={isLoading}
-            title="새로고침"
-            className="p-2 rounded-full text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white hover:bg-white dark:hover:bg-white/5 transition-all"
-          >
-            <RotateCw className={`w-4 h-4 ${isLoading ? 'animate-spin text-blue-500' : ''}`} />
-          </button>
+          {/* Desktop Controls (hidden on mobile) */}
+          <div className="hidden sm:flex items-center gap-1.5">
+            <button
+              onClick={onRefresh}
+              disabled={isLoading}
+              title="새로고침"
+              className="p-2 rounded-full text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white hover:bg-white dark:hover:bg-white/5 transition-all"
+            >
+              <RotateCw className={`w-4 h-4 ${isLoading ? 'animate-spin text-blue-500' : ''}`} />
+            </button>
 
-          {/* Theme Toggle */}
-          <button
-            onClick={onToggleDarkMode}
-            title={darkMode ? '라이트 모드' : '다크 모드'}
-            className="p-2 rounded-full text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white hover:bg-white dark:hover:bg-white/5 transition-all"
-          >
-            {darkMode ? <Sun className="w-4 h-4 text-amber-400" /> : <Moon className="w-4 h-4" />}
-          </button>
+            <button
+              onClick={onToggleDarkMode}
+              title={darkMode ? '라이트 모드' : '다크 모드'}
+              className="p-2 rounded-full text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white hover:bg-white dark:hover:bg-white/5 transition-all"
+            >
+              {darkMode ? <Sun className="w-4 h-4 text-amber-400" /> : <Moon className="w-4 h-4" />}
+            </button>
+          </div>
 
         </div>
 
