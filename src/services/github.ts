@@ -149,9 +149,11 @@ export function setCustomDescription(projectId: string | number, desc: string): 
 // ========================
 
 export function exportFullConfig(): AppConfig {
+  const now = new Date().toISOString();
+  localStorage.setItem('gitdeploy_config_updated_at', now);
   return {
     version: 1,
-    updatedAt: new Date().toISOString(),
+    updatedAt: now,
     folders: getFolders(),
     projectFolders: getProjectFolderMap(),
     pinnedIds: getPinnedIds(),
@@ -177,24 +179,73 @@ export function applyFullConfig(config: AppConfig): void {
   if (config.customDescriptions) {
     localStorage.setItem(DESCRIPTIONS_KEY, JSON.stringify(config.customDescriptions));
   }
+  if (config.updatedAt) {
+    localStorage.setItem('gitdeploy_config_updated_at', config.updatedAt);
+  }
+}
+
+export function getGitHubToken(): string {
+  try {
+    return localStorage.getItem('gitdeploy_gh_pat') || '';
+  } catch {
+    return '';
+  }
+}
+
+let autoSaveTimer: any = null;
+
+// Automatically saves folder and pin updates to GitHub in background (debounced 1.2s)
+export function triggerAutoCloudSave(): void {
+  if (autoSaveTimer) clearTimeout(autoSaveTimer);
+
+  autoSaveTimer = setTimeout(async () => {
+    try {
+      const token = getGitHubToken();
+      if (!token) return;
+      const config = exportFullConfig();
+      await commitConfigToGitHub(token, config);
+      console.log('✅ Background auto-sync complete to GitHub repository');
+    } catch (e) {
+      console.warn('Auto cloud sync notice:', e);
+    }
+  }, 1200);
+}
+
+// Automatically pulls latest cloud config on startup (for mobile or other devices)
+export async function syncWithCloudOnStartup(): Promise<AppConfig | null> {
+  try {
+    const remote = await fetchRemoteConfig();
+    if (!remote) return null;
+
+    const localUpdated = localStorage.getItem('gitdeploy_config_updated_at');
+    // If local has no timestamp, or remote is newer, apply it seamlessly
+    if (!localUpdated || new Date(remote.updatedAt).getTime() >= new Date(localUpdated).getTime()) {
+      applyFullConfig(remote);
+      return remote;
+    }
+  } catch (e) {
+    console.warn('Failed cloud sync on startup', e);
+  }
+  return null;
 }
 
 export async function fetchRemoteConfig(): Promise<AppConfig | null> {
-  try {
-    const res = await fetch(`./config.json?v=${Date.now()}`, { cache: 'no-store' });
-    if (res.ok) {
-      const data = await res.json();
-      if (data && data.version) return data;
-    }
-  } catch (e) {
-    // fallback or continue
-  }
-
+  // Always try raw GitHub first for absolute latest real-time auto-commit
   try {
     const rawRes = await fetch(`https://raw.githubusercontent.com/hanb0303/github-deploy-hub/main/public/config.json?v=${Date.now()}`, { cache: 'no-store' });
     if (rawRes.ok) {
       const rawData = await rawRes.json();
       if (rawData && rawData.version) return rawData;
+    }
+  } catch (e) {
+    // fallback
+  }
+
+  try {
+    const res = await fetch(`./config.json?v=${Date.now()}`, { cache: 'no-store' });
+    if (res.ok) {
+      const data = await res.json();
+      if (data && data.version) return data;
     }
   } catch (e) {
     // ignore
@@ -246,7 +297,7 @@ export async function commitConfigToGitHub(token: string, config: AppConfig): Pr
 
   const content = btoa(unescape(encodeURIComponent(JSON.stringify(config, null, 2))));
   const body = {
-    message: 'chore: update cloud folder configuration',
+    message: 'chore: auto-sync cloud folder configuration',
     content,
     sha,
     branch: 'main'

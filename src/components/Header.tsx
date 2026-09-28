@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Search, Moon, Sun, RotateCw, Cloud } from 'lucide-react';
+import { Search, Moon, Sun, RotateCw } from 'lucide-react';
 
 interface HeaderProps {
   username: string;
@@ -11,7 +11,6 @@ interface HeaderProps {
   onRefresh: () => void;
   isLoading: boolean;
   totalDeployed: number;
-  onOpenSync: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -24,7 +23,6 @@ export const Header: React.FC<HeaderProps> = ({
   onRefresh,
   isLoading,
   totalDeployed,
-  onOpenSync,
 }) => {
   const [isEditingUser, setIsEditingUser] = useState(false);
   const [inputUser, setInputUser] = useState(username);
@@ -78,15 +76,8 @@ export const Header: React.FC<HeaderProps> = ({
             </div>
           )}
 
-          {/* Quick controls on mobile top right (Sync, Refresh, DarkMode) */}
+          {/* Quick controls on mobile top right (Refresh, DarkMode) */}
           <div className="flex items-center gap-1 sm:hidden">
-            <button
-              onClick={onOpenSync}
-              title="기기 간 폴더 동기화"
-              className="p-1.5 rounded-full text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-950/30 transition-all"
-            >
-              <Cloud className="w-4 h-4" />
-            </button>
             <button
               onClick={onRefresh}
               disabled={isLoading}
@@ -121,16 +112,7 @@ export const Header: React.FC<HeaderProps> = ({
           </div>
 
           {/* Desktop Controls (hidden on mobile) */}
-          <div className="hidden sm:flex items-center gap-2">
-            <button
-              onClick={onOpenSync}
-              title="기기 간 폴더 동기화"
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-blue-50 dark:bg-blue-950/40 hover:bg-blue-100 dark:hover:bg-blue-900/40 text-blue-600 dark:text-blue-400 text-xs font-semibold transition-all shadow-sm"
-            >
-              <Cloud className="w-3.5 h-3.5" />
-              <span>동기화</span>
-            </button>
-
+          <div className="hidden sm:flex items-center gap-1.5">
             <button
               onClick={onRefresh}
               disabled={isLoading}

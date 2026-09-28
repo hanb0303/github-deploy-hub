@@ -17,14 +17,12 @@ import {
   setCustomDescription,
   getProjectOrder,
   saveProjectOrder,
-  applyFullConfig,
-  fetchRemoteConfig,
-  decodeConfigForSync
+  triggerAutoCloudSave,
+  syncWithCloudOnStartup
 } from './services/github';
 import { Header } from './components/Header';
 import { FolderTabs } from './components/FolderTabs';
 import { ProjectRow } from './components/ProjectRow';
-import { SyncModal } from './components/SyncModal';
 import { 
   Loader2, 
   FolderOpen, 
@@ -59,49 +57,25 @@ export function App() {
     return saved !== null ? saved === 'true' : false;
   });
 
-  // Cloud & Device Sync Modal
-  const [isSyncModalOpen, setIsSyncModalOpen] = useState<boolean>(false);
-  const [toastMsg, setToastMsg] = useState<string | null>(null);
-
-  // Auto-hide toast
+  // Startup: automatically sync latest cloud config in background
   useEffect(() => {
-    if (toastMsg) {
-      const timer = setTimeout(() => setToastMsg(null), 3500);
-      return () => clearTimeout(timer);
-    }
-  }, [toastMsg]);
-
-  // Handle URL sync payload or initial fresh device cloud config loading
-  useEffect(() => {
+    // Check if ?token= query parameter is passed to store PAT in user's browser localStorage
     const params = new URLSearchParams(window.location.search);
-    const syncPayload = params.get('sync');
-    if (syncPayload) {
-      const decoded = decodeConfigForSync(syncPayload);
-      if (decoded) {
-        applyFullConfig(decoded);
-        setFolders(decoded.folders || getFolders());
-        setPinnedIds(decoded.pinnedIds || getPinnedIds());
-        params.delete('sync');
-        const newUrl = window.location.pathname + (params.toString() ? `?${params.toString()}` : '');
-        window.history.replaceState({}, '', newUrl);
-        setToastMsg('🎉 폴더 설정이 기기에 성공적으로 동기화되었습니다!');
-        loadData(username, true);
-        return;
-      }
+    const tokenParam = params.get('token');
+    if (tokenParam) {
+      localStorage.setItem('gitdeploy_gh_pat', tokenParam.trim());
+      params.delete('token');
+      const newUrl = window.location.pathname + (params.toString() ? `?${params.toString()}` : '');
+      window.history.replaceState({}, '', newUrl);
     }
 
-    // If new device with no custom folders mapped yet, fetch remote config.json
-    const rawMap = localStorage.getItem('gitdeploy_project_folders_map_v1');
-    if (!rawMap || rawMap === '{}') {
-      fetchRemoteConfig().then(remote => {
-        if (remote) {
-          applyFullConfig(remote);
-          setFolders(remote.folders || getFolders());
-          setPinnedIds(remote.pinnedIds || getPinnedIds());
-          loadData(username, true);
-        }
-      });
-    }
+    syncWithCloudOnStartup().then(remote => {
+      if (remote) {
+        setFolders(remote.folders || getFolders());
+        setPinnedIds(remote.pinnedIds || getPinnedIds());
+        loadData(username, true);
+      }
+    });
   }, []);
 
   useEffect(() => {
@@ -154,6 +128,7 @@ export function App() {
     const updated = saveFolder(newFolder);
     setFolders(updated);
     setActiveFolderId(newFolder.id);
+    triggerAutoCloudSave();
   };
 
   const handleDeleteFolder = (id: string) => {
@@ -169,11 +144,13 @@ export function App() {
       }
       return p;
     }));
+    triggerAutoCloudSave();
   };
 
   const handleReorderFolders = (newFolders: Folder[]) => {
     setFolders(newFolders);
     saveFoldersOrder(newFolders);
+    triggerAutoCloudSave();
   };
 
   const handleProjectFolderChange = (projectId: string | number, newFolderId: string) => {
@@ -184,6 +161,7 @@ export function App() {
       }
       return p;
     }));
+    triggerAutoCloudSave();
   };
 
   // Drag & drop project reordering
@@ -198,6 +176,7 @@ export function App() {
 
     setProjects(updated);
     saveProjectOrder(updated.map(p => p.id));
+    triggerAutoCloudSave();
   };
 
   // Pin Toggle: pins item and moves it to the top of its folder
@@ -232,6 +211,7 @@ export function App() {
       }
       return updatedProjects;
     });
+    triggerAutoCloudSave();
   };
 
   // Folder Collapse Toggle
@@ -249,6 +229,7 @@ export function App() {
       }
       return p;
     }));
+    triggerAutoCloudSave();
   };
 
   // Always show deployed projects
@@ -343,7 +324,6 @@ export function App() {
         onRefresh={() => loadData(username, true)}
         isLoading={isLoading}
         totalDeployed={totalDeployed}
-        onOpenSync={() => setIsSyncModalOpen(true)}
       />
 
       <main className="max-w-6xl mx-auto px-3.5 sm:px-8 py-4 sm:py-8 space-y-4 sm:space-y-6">
@@ -454,20 +434,6 @@ export function App() {
         )}
 
       </main>
-
-      {/* Toast Notification */}
-      {toastMsg && (
-        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 px-5 py-3 rounded-2xl bg-gray-900 text-white dark:bg-white dark:text-gray-900 text-xs font-bold shadow-2xl animate-in fade-in slide-in-from-bottom-4 duration-200">
-          <span>{toastMsg}</span>
-        </div>
-      )}
-
-      {/* Cloud & Device Sync Modal */}
-      <SyncModal
-        isOpen={isSyncModalOpen}
-        onClose={() => setIsSyncModalOpen(false)}
-        onSuccessToast={(msg) => setToastMsg(msg)}
-      />
 
     </div>
   );
