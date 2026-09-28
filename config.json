@@ -1,25 +1,39 @@
 {
   "version": 1,
-  "updatedAt": "2026-09-28T14:35:00.000Z",
+  "updatedAt": "2026-09-28T06:48:56.902Z",
   "folders": [
-    { "id": "all", "name": "전체" },
-    { "id": "default", "name": "기타" },
-    { "id": "ai", "name": "AI 자동화" },
-    { "id": "side", "name": "사이드 프로젝트" }
+    {
+      "id": "all",
+      "name": "전체"
+    },
+    {
+      "id": "default",
+      "name": "기타"
+    },
+    {
+      "id": "ai",
+      "name": "AI 자동화"
+    },
+    {
+      "id": "folder-1790578104544",
+      "name": "C-ITS"
+    }
   ],
   "projectFolders": {
+    "1344980008": "default",
+    "1359845220": "default",
+    "1371124112": "folder-1790578104544",
+    "1371128949": "folder-1790578104544",
+    "1374109149": "folder-1790578104544",
     "1375579848": "ai",
-    "1381027045": "ai",
-    "1344980008": "side",
-    "1359845220": "side",
-    "1374109149": "default",
-    "1371124112": "default",
-    "1371128949": "default"
+    "1381027045": "ai"
   },
   "pinnedIds": [
     "1375579848",
     "1381027045"
   ],
   "projectOrder": [],
-  "customDescriptions": {}
+  "customDescriptions": {
+    "1381027045": "깃허브모음"
+  }
 }
