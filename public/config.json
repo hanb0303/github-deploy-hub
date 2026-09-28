@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updatedAt": "2026-09-28T07:12:39.738Z",
+  "updatedAt": "2026-09-28T07:12:44.277Z",
   "folders": [
     {
       "id": "all",
@@ -13,6 +13,10 @@
     {
       "id": "ai",
       "name": "AI 자동화"
+    },
+    {
+      "id": "folder-1790579563770",
+      "name": "C-ITS"
     }
   ],
   "projectFolders": {
