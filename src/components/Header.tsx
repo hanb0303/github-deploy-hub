@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Search, Moon, Sun, RotateCw } from 'lucide-react';
+import { Search, Moon, Sun, RotateCw, Check, Cloud } from 'lucide-react';
 
 interface HeaderProps {
   username: string;
@@ -11,6 +11,7 @@ interface HeaderProps {
   onRefresh: () => void;
   isLoading: boolean;
   totalDeployed: number;
+  syncStatus?: 'idle' | 'saving' | 'saved' | 'error';
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -23,6 +24,7 @@ export const Header: React.FC<HeaderProps> = ({
   onRefresh,
   isLoading,
   totalDeployed,
+  syncStatus = 'idle',
 }) => {
   const [isEditingUser, setIsEditingUser] = useState(false);
   const [inputUser, setInputUser] = useState(username);
@@ -73,6 +75,26 @@ export const Header: React.FC<HeaderProps> = ({
               <span className="text-xs text-blue-600 dark:text-blue-400 font-semibold ml-0.5 sm:ml-1">
                 {totalDeployed}개
               </span>
+
+              {/* Discreet auto-sync status badge */}
+              {syncStatus === 'saving' && (
+                <span className="flex items-center gap-1 text-[11px] text-blue-500 font-medium ml-1.5 animate-pulse">
+                  <Cloud className="w-3 h-3 animate-bounce" />
+                  <span className="hidden sm:inline">클라우드 저장 중</span>
+                </span>
+              )}
+              {syncStatus === 'saved' && (
+                <span className="flex items-center gap-1 text-[11px] text-emerald-500 font-medium ml-1.5">
+                  <Check className="w-3 h-3" />
+                  <span className="hidden sm:inline">동기화 완료</span>
+                </span>
+              )}
+              {syncStatus === 'error' && (
+                <span className="flex items-center gap-1 text-[11px] text-rose-500 font-medium ml-1.5">
+                  <span className="w-1.5 h-1.5 rounded-full bg-rose-500" />
+                  <span className="hidden sm:inline">동기화 실패</span>
+                </span>
+              )}
             </div>
           )}
 

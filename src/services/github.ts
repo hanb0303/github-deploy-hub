@@ -192,23 +192,64 @@ export function getGitHubToken(): string {
   }
 }
 
+// UTF-8 safe base64 encode/decode
+function toBase64Utf8(str: string): string {
+  const bytes = new TextEncoder().encode(str);
+  let binary = '';
+  for (let i = 0; i < bytes.length; i++) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+  return btoa(binary);
+}
+
+function fromBase64Utf8(b64: string): string {
+  const binary = atob(b64.replace(/\s/g, ''));
+  const bytes = Uint8Array.from(binary, c => c.charCodeAt(0));
+  return new TextDecoder().decode(bytes);
+}
+
+type SyncStatusListener = (status: 'idle' | 'saving' | 'saved' | 'error') => void;
+const syncListeners: Set<SyncStatusListener> = new Set();
+
+export function onSyncStatusChange(listener: SyncStatusListener): () => void {
+  syncListeners.add(listener);
+  return () => syncListeners.delete(listener);
+}
+
+function notifySyncStatus(status: 'idle' | 'saving' | 'saved' | 'error') {
+  syncListeners.forEach(listener => listener(status));
+}
+
 let autoSaveTimer: any = null;
 
-// Automatically saves folder and pin updates to GitHub in background (debounced 1.2s)
+// Automatically saves folder and pin updates to GitHub in background (debounced 500ms)
 export function triggerAutoCloudSave(): void {
   if (autoSaveTimer) clearTimeout(autoSaveTimer);
+
+  notifySyncStatus('saving');
 
   autoSaveTimer = setTimeout(async () => {
     try {
       const token = getGitHubToken();
-      if (!token) return;
+      if (!token) {
+        notifySyncStatus('idle');
+        return;
+      }
       const config = exportFullConfig();
-      await commitConfigToGitHub(token, config);
-      console.log('✅ Background auto-sync complete to GitHub repository');
+      const success = await commitConfigToGitHub(token, config);
+      if (success) {
+        notifySyncStatus('saved');
+        setTimeout(() => notifySyncStatus('idle'), 2500);
+      } else {
+        notifySyncStatus('error');
+        setTimeout(() => notifySyncStatus('idle'), 3000);
+      }
     } catch (e) {
       console.warn('Auto cloud sync notice:', e);
+      notifySyncStatus('error');
+      setTimeout(() => notifySyncStatus('idle'), 3000);
     }
-  }, 1200);
+  }, 500);
 }
 
 // Automatically pulls latest cloud config on startup (for mobile or other devices)
@@ -221,6 +262,7 @@ export async function syncWithCloudOnStartup(): Promise<AppConfig | null> {
     const localUpdated = localStorage.getItem('gitdeploy_config_updated_at');
 
     // If mobile / viewing device (no write token), ALWAYS sync with remote!
+    // If on PC (has write token), sync if remote is newer or local is empty!
     if (!hasWriteToken || !localUpdated || new Date(remote.updatedAt).getTime() > new Date(localUpdated).getTime()) {
       applyFullConfig(remote);
       localStorage.setItem('gitdeploy_config_updated_at', remote.updatedAt);
@@ -233,9 +275,31 @@ export async function syncWithCloudOnStartup(): Promise<AppConfig | null> {
 }
 
 export async function fetchRemoteConfig(): Promise<AppConfig | null> {
-  // 1. Try raw GitHub first for absolute latest real-time auto-commit
+  const owner = 'hanb0303';
+  const repo = 'github-deploy-hub';
+  const timestamp = Date.now();
+
+  // 1. Try GitHub Contents API directly (real-time, ZERO CDN caching delay, public repository)
   try {
-    const rawRes = await fetch(`https://raw.githubusercontent.com/hanb0303/github-deploy-hub/main/public/config.json?v=${Date.now()}`, { cache: 'no-store' });
+    const apiUrl = `https://api.github.com/repos/${owner}/${repo}/contents/public/config.json?ref=main&_t=${timestamp}`;
+    const apiRes = await fetch(apiUrl, { cache: 'no-store' });
+    if (apiRes.ok) {
+      const data = await apiRes.json();
+      if (data && data.content) {
+        const jsonStr = fromBase64Utf8(data.content);
+        const parsed = JSON.parse(jsonStr);
+        if (parsed && parsed.version) {
+          return parsed;
+        }
+      }
+    }
+  } catch (e) {
+    console.warn('api.github.com fetch fallback', e);
+  }
+
+  // 2. Try raw GitHub file as fallback
+  try {
+    const rawRes = await fetch(`https://raw.githubusercontent.com/${owner}/${repo}/main/public/config.json?_t=${timestamp}`, { cache: 'no-store' });
     if (rawRes.ok) {
       const rawData = await rawRes.json();
       if (rawData && rawData.version) return rawData;
@@ -244,9 +308,9 @@ export async function fetchRemoteConfig(): Promise<AppConfig | null> {
     // fallback
   }
 
-  // 2. Try relative config.json on GitHub Pages
+  // 3. Try relative config.json on GitHub Pages
   try {
-    const res = await fetch(`./config.json?v=${Date.now()}`, { cache: 'no-store' });
+    const res = await fetch(`./config.json?_t=${timestamp}`, { cache: 'no-store' });
     if (res.ok) {
       const data = await res.json();
       if (data && data.version) return data;
@@ -261,7 +325,7 @@ export async function fetchRemoteConfig(): Promise<AppConfig | null> {
 export function encodeConfigForSync(config: AppConfig): string {
   try {
     const jsonStr = JSON.stringify(config);
-    return btoa(encodeURIComponent(jsonStr));
+    return toBase64Utf8(jsonStr);
   } catch {
     return '';
   }
@@ -269,7 +333,7 @@ export function encodeConfigForSync(config: AppConfig): string {
 
 export function decodeConfigForSync(encoded: string): AppConfig | null {
   try {
-    const jsonStr = decodeURIComponent(atob(encoded));
+    const jsonStr = fromBase64Utf8(encoded);
     return JSON.parse(jsonStr);
   } catch {
     return null;
@@ -285,18 +349,19 @@ export async function commitConfigToGitHub(token: string, config: AppConfig): Pr
     'Content-Type': 'application/json',
   };
 
-  const content = btoa(unescape(encodeURIComponent(JSON.stringify(config, null, 2))));
+  const content = toBase64Utf8(JSON.stringify(config, null, 2));
+  let anySuccess = false;
 
-  // Commit to main branch (public/config.json)
+  // 1. Commit to main branch (public/config.json)
   try {
     const mainUrl = `https://api.github.com/repos/${owner}/${repo}/contents/public/config.json`;
     let mainSha: string | undefined;
-    const getRes = await fetch(mainUrl, { headers });
+    const getRes = await fetch(`${mainUrl}?ref=main&_t=${Date.now()}`, { headers, cache: 'no-store' });
     if (getRes.ok) {
       const fileData = await getRes.json();
       mainSha = fileData.sha;
     }
-    await fetch(mainUrl, {
+    const putRes = await fetch(mainUrl, {
       method: 'PUT',
       headers,
       body: JSON.stringify({
@@ -306,20 +371,25 @@ export async function commitConfigToGitHub(token: string, config: AppConfig): Pr
         branch: 'main'
       }),
     });
+    if (putRes.ok) {
+      anySuccess = true;
+    } else {
+      console.warn('Main PUT failed:', await putRes.text());
+    }
   } catch (e) {
     console.warn('Failed committing to main', e);
   }
 
-  // Also commit to gh-pages branch (config.json) so GitHub Pages serves it immediately!
+  // 2. Also commit to gh-pages branch (config.json) so GitHub Pages serves it immediately!
   try {
     const ghPagesUrl = `https://api.github.com/repos/${owner}/${repo}/contents/config.json`;
     let ghPagesSha: string | undefined;
-    const getGhRes = await fetch(`${ghPagesUrl}?ref=gh-pages`, { headers });
+    const getGhRes = await fetch(`${ghPagesUrl}?ref=gh-pages&_t=${Date.now()}`, { headers, cache: 'no-store' });
     if (getGhRes.ok) {
       const fileData = await getGhRes.json();
       ghPagesSha = fileData.sha;
     }
-    await fetch(ghPagesUrl, {
+    const putGhRes = await fetch(ghPagesUrl, {
       method: 'PUT',
       headers,
       body: JSON.stringify({
@@ -329,11 +399,16 @@ export async function commitConfigToGitHub(token: string, config: AppConfig): Pr
         branch: 'gh-pages'
       }),
     });
+    if (putGhRes.ok) {
+      anySuccess = true;
+    } else {
+      console.warn('gh-pages PUT failed:', await putGhRes.text());
+    }
   } catch (e) {
     console.warn('Failed committing to gh-pages', e);
   }
 
-  return true;
+  return anySuccess;
 }
 
 export function detectPlatform(url: string | null): DeploymentPlatform {

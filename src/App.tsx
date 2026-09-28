@@ -18,7 +18,8 @@ import {
   getProjectOrder,
   saveProjectOrder,
   triggerAutoCloudSave,
-  syncWithCloudOnStartup
+  syncWithCloudOnStartup,
+  onSyncStatusChange
 } from './services/github';
 import { Header } from './components/Header';
 import { FolderTabs } from './components/FolderTabs';
@@ -44,6 +45,7 @@ export function App() {
   const [search, setSearch] = useState<string>('');
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [syncStatus, setSyncStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
 
   // Pinned (Favorites)
   const [pinnedIds, setPinnedIds] = useState<string[]>(() => getPinnedIds());
@@ -57,25 +59,9 @@ export function App() {
     return saved !== null ? saved === 'true' : false;
   });
 
-  // Startup: automatically sync latest cloud config in background
+  // Listen to background cloud auto-save events
   useEffect(() => {
-    // Check if ?token= query parameter is passed to store PAT in user's browser localStorage
-    const params = new URLSearchParams(window.location.search);
-    const tokenParam = params.get('token');
-    if (tokenParam) {
-      localStorage.setItem('gitdeploy_gh_pat', tokenParam.trim());
-      params.delete('token');
-      const newUrl = window.location.pathname + (params.toString() ? `?${params.toString()}` : '');
-      window.history.replaceState({}, '', newUrl);
-    }
-
-    syncWithCloudOnStartup().then(remote => {
-      if (remote) {
-        setFolders(remote.folders || getFolders());
-        setPinnedIds(remote.pinnedIds || getPinnedIds());
-        loadData(username, true);
-      }
-    });
+    return onSyncStatusChange(setSyncStatus);
   }, []);
 
   useEffect(() => {
@@ -87,7 +73,7 @@ export function App() {
     localStorage.setItem('gitdeploy_dark_mode', String(darkMode));
   }, [darkMode]);
 
-  // Load data
+  // Load repository data
   const loadData = async (targetUser: string, force = false) => {
     setIsLoading(true);
     setErrorMsg(null);
@@ -112,12 +98,76 @@ export function App() {
     }
   };
 
+  // Robust Sequential Startup: sync latest cloud config FIRST, then load repos
   useEffect(() => {
-    loadData(username);
+    // 1. Process ?token= query parameter if present to store write PAT
+    const params = new URLSearchParams(window.location.search);
+    const tokenParam = params.get('token');
+    if (tokenParam) {
+      localStorage.setItem('gitdeploy_gh_pat', tokenParam.trim());
+      params.delete('token');
+      const newUrl = window.location.pathname + (params.toString() ? `?${params.toString()}` : '');
+      window.history.replaceState({}, '', newUrl);
+    }
+
+    let isMounted = true;
+
+    async function init() {
+      setIsLoading(true);
+      setErrorMsg(null);
+
+      // Step 1: Real-time pull from cloud (bypasses CDN cache, ensures mobile gets latest PC changes)
+      try {
+        const remote = await syncWithCloudOnStartup();
+        if (remote && isMounted) {
+          if (Array.isArray(remote.folders) && remote.folders.length > 0) {
+            setFolders(remote.folders);
+          }
+          if (Array.isArray(remote.pinnedIds)) {
+            setPinnedIds(remote.pinnedIds);
+          }
+        }
+      } catch (e) {
+        console.warn('Initial cloud sync error:', e);
+      }
+
+      // Step 2: Load projects with fresh cloud folder mapping
+      if (isMounted) {
+        await loadData(username, false);
+      }
+    }
+
+    init();
+
     const currentUrl = new URL(window.location.href);
     currentUrl.searchParams.set('user', username);
     window.history.replaceState({}, '', currentUrl.toString());
+
+    return () => {
+      isMounted = false;
+    };
   }, [username]);
+
+  // Manual Refresh Handler: pulls latest cloud config AND forces repo re-fetch
+  const handleManualRefresh = async () => {
+    setIsLoading(true);
+    try {
+      const remote = await syncWithCloudOnStartup();
+      if (remote) {
+        if (Array.isArray(remote.folders) && remote.folders.length > 0) {
+          setFolders(remote.folders);
+        }
+        if (Array.isArray(remote.pinnedIds)) {
+          setPinnedIds(remote.pinnedIds);
+        }
+      }
+      await loadData(username, true);
+    } catch (e) {
+      console.warn('Manual refresh failed:', e);
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   // Folder Operations
   const handleAddFolder = (name: string) => {
@@ -321,9 +371,10 @@ export function App() {
         onSearchChange={setSearch}
         darkMode={darkMode}
         onToggleDarkMode={() => setDarkMode(!darkMode)}
-        onRefresh={() => loadData(username, true)}
+        onRefresh={handleManualRefresh}
         isLoading={isLoading}
         totalDeployed={totalDeployed}
+        syncStatus={syncStatus}
       />
 
       <main className="max-w-6xl mx-auto px-3.5 sm:px-8 py-4 sm:py-8 space-y-4 sm:space-y-6">
