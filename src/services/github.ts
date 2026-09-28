@@ -217,10 +217,13 @@ export async function syncWithCloudOnStartup(): Promise<AppConfig | null> {
     const remote = await fetchRemoteConfig();
     if (!remote) return null;
 
+    const hasWriteToken = !!getGitHubToken();
     const localUpdated = localStorage.getItem('gitdeploy_config_updated_at');
-    // If local has no timestamp, or remote is newer, apply it seamlessly
-    if (!localUpdated || new Date(remote.updatedAt).getTime() >= new Date(localUpdated).getTime()) {
+
+    // If mobile / viewing device (no write token), ALWAYS sync with remote!
+    if (!hasWriteToken || !localUpdated || new Date(remote.updatedAt).getTime() > new Date(localUpdated).getTime()) {
       applyFullConfig(remote);
+      localStorage.setItem('gitdeploy_config_updated_at', remote.updatedAt);
       return remote;
     }
   } catch (e) {
@@ -230,7 +233,7 @@ export async function syncWithCloudOnStartup(): Promise<AppConfig | null> {
 }
 
 export async function fetchRemoteConfig(): Promise<AppConfig | null> {
-  // Always try raw GitHub first for absolute latest real-time auto-commit
+  // 1. Try raw GitHub first for absolute latest real-time auto-commit
   try {
     const rawRes = await fetch(`https://raw.githubusercontent.com/hanb0303/github-deploy-hub/main/public/config.json?v=${Date.now()}`, { cache: 'no-store' });
     if (rawRes.ok) {
@@ -241,6 +244,7 @@ export async function fetchRemoteConfig(): Promise<AppConfig | null> {
     // fallback
   }
 
+  // 2. Try relative config.json on GitHub Pages
   try {
     const res = await fetch(`./config.json?v=${Date.now()}`, { cache: 'no-store' });
     if (res.ok) {
@@ -275,43 +279,58 @@ export function decodeConfigForSync(encoded: string): AppConfig | null {
 export async function commitConfigToGitHub(token: string, config: AppConfig): Promise<boolean> {
   const owner = 'hanb0303';
   const repo = 'github-deploy-hub';
-  const path = 'public/config.json';
-  const url = `https://api.github.com/repos/${owner}/${repo}/contents/${path}`;
-
   const headers = {
     'Authorization': `token ${token.trim()}`,
     'Accept': 'application/vnd.github.v3+json',
     'Content-Type': 'application/json',
   };
 
-  let sha: string | undefined;
+  const content = btoa(unescape(encodeURIComponent(JSON.stringify(config, null, 2))));
+
+  // Commit to main branch (public/config.json)
   try {
-    const getRes = await fetch(url, { headers });
+    const mainUrl = `https://api.github.com/repos/${owner}/${repo}/contents/public/config.json`;
+    let mainSha: string | undefined;
+    const getRes = await fetch(mainUrl, { headers });
     if (getRes.ok) {
       const fileData = await getRes.json();
-      sha = fileData.sha;
+      mainSha = fileData.sha;
     }
+    await fetch(mainUrl, {
+      method: 'PUT',
+      headers,
+      body: JSON.stringify({
+        message: 'chore: auto-sync cloud folder configuration',
+        content,
+        sha: mainSha,
+        branch: 'main'
+      }),
+    });
   } catch (e) {
-    // ignore
+    console.warn('Failed committing to main', e);
   }
 
-  const content = btoa(unescape(encodeURIComponent(JSON.stringify(config, null, 2))));
-  const body = {
-    message: 'chore: auto-sync cloud folder configuration',
-    content,
-    sha,
-    branch: 'main'
-  };
-
-  const putRes = await fetch(url, {
-    method: 'PUT',
-    headers,
-    body: JSON.stringify(body),
-  });
-
-  if (!putRes.ok) {
-    const errData = await putRes.json().catch(() => ({}));
-    throw new Error(errData.message || 'GitHub 저장에 실패했습니다. 토큰 권한을 확인해주세요.');
+  // Also commit to gh-pages branch (config.json) so GitHub Pages serves it immediately!
+  try {
+    const ghPagesUrl = `https://api.github.com/repos/${owner}/${repo}/contents/config.json`;
+    let ghPagesSha: string | undefined;
+    const getGhRes = await fetch(`${ghPagesUrl}?ref=gh-pages`, { headers });
+    if (getGhRes.ok) {
+      const fileData = await getGhRes.json();
+      ghPagesSha = fileData.sha;
+    }
+    await fetch(ghPagesUrl, {
+      method: 'PUT',
+      headers,
+      body: JSON.stringify({
+        message: 'chore: auto-sync live config.json',
+        content,
+        sha: ghPagesSha,
+        branch: 'gh-pages'
+      }),
+    });
+  } catch (e) {
+    console.warn('Failed committing to gh-pages', e);
   }
 
   return true;
