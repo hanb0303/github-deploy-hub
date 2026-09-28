@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updatedAt": "2026-09-28T07:12:58.802Z",
+  "updatedAt": "2026-09-28T07:13:04.111Z",
   "folders": [
     {
       "id": "all",
@@ -34,6 +34,7 @@
   ],
   "projectOrder": [],
   "customDescriptions": {
+    "1375579848": "가계부",
     "1381027045": "깃허브 모음"
   }
 }
