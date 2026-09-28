@@ -1,20 +1,28 @@
 {
   "version": 1,
-  "updatedAt": "2026-09-28T14:35:00.000Z",
+  "updatedAt": "2026-09-28T06:48:20.723Z",
   "folders": [
-    { "id": "all", "name": "전체" },
-    { "id": "default", "name": "기타" },
-    { "id": "ai", "name": "AI 자동화" },
-    { "id": "side", "name": "사이드 프로젝트" }
+    {
+      "id": "all",
+      "name": "전체"
+    },
+    {
+      "id": "default",
+      "name": "기타"
+    },
+    {
+      "id": "ai",
+      "name": "AI 자동화"
+    }
   ],
   "projectFolders": {
-    "1375579848": "ai",
-    "1381027045": "ai",
-    "1344980008": "side",
-    "1359845220": "side",
-    "1374109149": "default",
+    "1344980008": "default",
+    "1359845220": "default",
     "1371124112": "default",
-    "1371128949": "default"
+    "1371128949": "default",
+    "1374109149": "default",
+    "1375579848": "ai",
+    "1381027045": "ai"
   },
   "pinnedIds": [
     "1375579848",
