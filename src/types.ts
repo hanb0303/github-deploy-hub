@@ -36,3 +36,13 @@ export interface ProjectItem {
   updatedAt: string;
   isCustom?: boolean;
 }
+
+export interface AppConfig {
+  version: number;
+  updatedAt: string;
+  folders: Folder[];
+  projectFolders: Record<string, string>;
+  pinnedIds: string[];
+  projectOrder: string[];
+  customDescriptions: Record<string, string>;
+}

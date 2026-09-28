@@ -1,4 +1,4 @@
-import { GitHubUser, ProjectItem, DeploymentPlatform, Folder } from '../types';
+import { GitHubUser, ProjectItem, DeploymentPlatform, Folder, AppConfig } from '../types';
 
 const CACHE_PREFIX = 'gitdeploy_hub_cache_';
 const CACHE_EXPIRY_MS = 15 * 60 * 1000;
@@ -142,6 +142,128 @@ export function setCustomDescription(projectId: string | number, desc: string): 
   const map = getCustomDescriptionMap();
   map[String(projectId)] = desc;
   localStorage.setItem(DESCRIPTIONS_KEY, JSON.stringify(map));
+}
+
+// ========================
+// Cloud / Multi-Device Sync
+// ========================
+
+export function exportFullConfig(): AppConfig {
+  return {
+    version: 1,
+    updatedAt: new Date().toISOString(),
+    folders: getFolders(),
+    projectFolders: getProjectFolderMap(),
+    pinnedIds: getPinnedIds(),
+    projectOrder: getProjectOrder(),
+    customDescriptions: getCustomDescriptionMap(),
+  };
+}
+
+export function applyFullConfig(config: AppConfig): void {
+  if (!config) return;
+  if (Array.isArray(config.folders) && config.folders.length > 0) {
+    localStorage.setItem(FOLDERS_KEY, JSON.stringify(config.folders));
+  }
+  if (config.projectFolders) {
+    localStorage.setItem(PROJECT_FOLDER_MAP_KEY, JSON.stringify(config.projectFolders));
+  }
+  if (Array.isArray(config.pinnedIds)) {
+    localStorage.setItem(PINNED_KEY, JSON.stringify(config.pinnedIds));
+  }
+  if (Array.isArray(config.projectOrder)) {
+    localStorage.setItem(PROJECT_ORDER_KEY, JSON.stringify(config.projectOrder));
+  }
+  if (config.customDescriptions) {
+    localStorage.setItem(DESCRIPTIONS_KEY, JSON.stringify(config.customDescriptions));
+  }
+}
+
+export async function fetchRemoteConfig(): Promise<AppConfig | null> {
+  try {
+    const res = await fetch(`./config.json?v=${Date.now()}`, { cache: 'no-store' });
+    if (res.ok) {
+      const data = await res.json();
+      if (data && data.version) return data;
+    }
+  } catch (e) {
+    // fallback or continue
+  }
+
+  try {
+    const rawRes = await fetch(`https://raw.githubusercontent.com/hanb0303/github-deploy-hub/main/public/config.json?v=${Date.now()}`, { cache: 'no-store' });
+    if (rawRes.ok) {
+      const rawData = await rawRes.json();
+      if (rawData && rawData.version) return rawData;
+    }
+  } catch (e) {
+    // ignore
+  }
+
+  return null;
+}
+
+export function encodeConfigForSync(config: AppConfig): string {
+  try {
+    const jsonStr = JSON.stringify(config);
+    return btoa(encodeURIComponent(jsonStr));
+  } catch {
+    return '';
+  }
+}
+
+export function decodeConfigForSync(encoded: string): AppConfig | null {
+  try {
+    const jsonStr = decodeURIComponent(atob(encoded));
+    return JSON.parse(jsonStr);
+  } catch {
+    return null;
+  }
+}
+
+export async function commitConfigToGitHub(token: string, config: AppConfig): Promise<boolean> {
+  const owner = 'hanb0303';
+  const repo = 'github-deploy-hub';
+  const path = 'public/config.json';
+  const url = `https://api.github.com/repos/${owner}/${repo}/contents/${path}`;
+
+  const headers = {
+    'Authorization': `token ${token.trim()}`,
+    'Accept': 'application/vnd.github.v3+json',
+    'Content-Type': 'application/json',
+  };
+
+  let sha: string | undefined;
+  try {
+    const getRes = await fetch(url, { headers });
+    if (getRes.ok) {
+      const fileData = await getRes.json();
+      sha = fileData.sha;
+    }
+  } catch (e) {
+    // ignore
+  }
+
+  const content = btoa(unescape(encodeURIComponent(JSON.stringify(config, null, 2))));
+  const body = {
+    message: 'chore: update cloud folder configuration',
+    content,
+    sha,
+    branch: 'main'
+  };
+
+  const putRes = await fetch(url, {
+    method: 'PUT',
+    headers,
+    body: JSON.stringify(body),
+  });
+
+  if (!putRes.ok) {
+    const errData = await putRes.json().catch(() => ({}));
+    throw new Error(errData.message || 'GitHub 저장에 실패했습니다. 토큰 권한을 확인해주세요.');
+  }
+
+  return true;
 }
 
 export function detectPlatform(url: string | null): DeploymentPlatform {
