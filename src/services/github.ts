@@ -464,21 +464,92 @@ export async function fetchGitHubRepos(username: string, force = false): Promise
   }
 
   if (!rawRepos) {
-    const res = await fetch(`https://api.github.com/users/${username}/repos?per_page=100&sort=updated`, {
-      headers: { 'Accept': 'application/vnd.github.v3+json' },
-    });
-    if (!res.ok) {
-      throw new Error('레포지토리 목록을 가져오지 못했습니다.');
+    const token = getGitHubToken();
+    const headers: Record<string, string> = {
+      'Accept': 'application/vnd.github.v3+json',
+    };
+    if (token) {
+      headers['Authorization'] = `token ${token.trim()}`;
     }
-    rawRepos = await res.json();
+
     try {
-      localStorage.setItem(cacheKey, JSON.stringify({
-        timestamp: Date.now(),
-        data: rawRepos,
-      }));
-    } catch (e) {
-      console.warn(e);
+      const res = await fetch(`https://api.github.com/users/${username}/repos?per_page=100&sort=updated`, {
+        headers,
+      });
+
+      if (res.ok) {
+        rawRepos = await res.json();
+        try {
+          localStorage.setItem(cacheKey, JSON.stringify({
+            timestamp: Date.now(),
+            data: rawRepos,
+          }));
+        } catch (e) {
+          console.warn(e);
+        }
+      } else {
+        console.warn(`GitHub API returned status ${res.status}`);
+      }
+    } catch (netErr) {
+      console.warn('Network error calling api.github.com', netErr);
     }
+  }
+
+  // Fallback 1: Use any cached data from localStorage (even if expired!)
+  if (!rawRepos) {
+    const cached = localStorage.getItem(cacheKey);
+    if (cached) {
+      try {
+        const { data } = JSON.parse(cached);
+        if (Array.isArray(data) && data.length > 0) {
+          rawRepos = data;
+        }
+      } catch (e) {
+        console.warn(e);
+      }
+    }
+  }
+
+  // Fallback 2: Fetch bundled static repos.json from GitHub Pages (unlimited hits, no rate limit)
+  if (!rawRepos) {
+    try {
+      const staticRes = await fetch(`./repos.json?_t=${Date.now()}`, { cache: 'no-store' });
+      if (staticRes.ok) {
+        const staticData = await staticRes.json();
+        if (Array.isArray(staticData) && staticData.length > 0) {
+          rawRepos = staticData;
+          try {
+            localStorage.setItem(cacheKey, JSON.stringify({
+              timestamp: Date.now(),
+              data: rawRepos,
+            }));
+          } catch (e) {
+            console.warn(e);
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('Fallback static repos.json failed', e);
+    }
+  }
+
+  // Fallback 3: Fetch static repos.json from raw.githubusercontent.com
+  if (!rawRepos) {
+    try {
+      const rawRes = await fetch(`https://raw.githubusercontent.com/hanb0303/github-deploy-hub/main/public/repos.json?_t=${Date.now()}`, { cache: 'no-store' });
+      if (rawRes.ok) {
+        const rawData = await rawRes.json();
+        if (Array.isArray(rawData) && rawData.length > 0) {
+          rawRepos = rawData;
+        }
+      }
+    } catch (e) {
+      // ignore
+    }
+  }
+
+  if (!rawRepos || rawRepos.length === 0) {
+    throw new Error('GitHub API 호출 한도(시간당 60회)를 초과했습니다. 잠시 후 다시 새로고침 해주세요.');
   }
 
   // Always apply the latest user settings (folder, pin, description) in real-time
