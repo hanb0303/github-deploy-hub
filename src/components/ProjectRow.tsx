@@ -21,7 +21,7 @@ interface ProjectRowProps {
   onReorderProject: (sourceId: string | number, targetId: string | number) => void;
 }
 
-export const ProjectRow: React.FC<ProjectRowProps> = ({
+export const ProjectRow: React.FC<ProjectRowProps> = React.memo(({
   project,
   folders,
   onFolderChange,
@@ -280,4 +280,4 @@ export const ProjectRow: React.FC<ProjectRowProps> = ({
 
     </div>
   );
-};
+});

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Search, Moon, Sun, RotateCw, Check, Cloud } from 'lucide-react';
+import { Search, Moon, Sun, RotateCw, Check, Cloud, Download, Upload, SlidersHorizontal } from 'lucide-react';
 
 interface HeaderProps {
   username: string;
@@ -12,6 +12,8 @@ interface HeaderProps {
   isLoading: boolean;
   totalDeployed: number;
   syncStatus?: 'idle' | 'saving' | 'saved' | 'error';
+  onBackup?: () => void;
+  onRestore?: (file: File) => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -25,9 +27,37 @@ export const Header: React.FC<HeaderProps> = ({
   isLoading,
   totalDeployed,
   syncStatus = 'idle',
+  onBackup,
+  onRestore,
 }) => {
   const [isEditingUser, setIsEditingUser] = useState(false);
   const [inputUser, setInputUser] = useState(username);
+  const [showSettingsMenu, setShowSettingsMenu] = useState(false);
+  const fileInputRef = React.useRef<HTMLInputElement>(null);
+  const menuRef = React.useRef<HTMLDivElement>(null);
+
+  React.useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setShowSettingsMenu(false);
+      }
+    };
+    if (showSettingsMenu) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [showSettingsMenu]);
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file && onRestore) {
+      onRestore(file);
+    }
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+    setShowSettingsMenu(false);
+  };
 
   const handleUserSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -98,8 +128,15 @@ export const Header: React.FC<HeaderProps> = ({
             </div>
           )}
 
-          {/* Quick controls on mobile top right (Refresh, DarkMode) */}
+          {/* Quick controls on mobile top right (Settings, Refresh, DarkMode) */}
           <div className="flex items-center gap-1 sm:hidden">
+            <button
+              onClick={() => setShowSettingsMenu(!showSettingsMenu)}
+              title="백업 및 설정"
+              className="p-1.5 rounded-full text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-white/5 transition-all"
+            >
+              <SlidersHorizontal className="w-4 h-4" />
+            </button>
             <button
               onClick={onRefresh}
               disabled={isLoading}
@@ -119,9 +156,9 @@ export const Header: React.FC<HeaderProps> = ({
         </div>
 
         {/* Right / Mobile Bottom Bar: Search & Desktop Controls */}
-        <div className="flex items-center gap-2.5 w-full sm:w-auto">
+        <div className="flex items-center gap-2.5 w-full sm:w-auto relative">
           
-          {/* Apple / Toss style Minimal Search: Full width on mobile, w-60 on desktop */}
+          {/* Apple / Toss style Minimal Search */}
           <div className="relative w-full sm:w-60">
             <Search className="w-3.5 h-3.5 absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
             <input
@@ -135,6 +172,14 @@ export const Header: React.FC<HeaderProps> = ({
 
           {/* Desktop Controls (hidden on mobile) */}
           <div className="hidden sm:flex items-center gap-1.5">
+            <button
+              onClick={() => setShowSettingsMenu(!showSettingsMenu)}
+              title="백업 및 데이터 복원"
+              className={`p-2 rounded-full transition-all ${showSettingsMenu ? 'bg-gray-200 dark:bg-white/15 text-blue-600' : 'text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white hover:bg-white dark:hover:bg-white/5'}`}
+            >
+              <SlidersHorizontal className="w-4 h-4" />
+            </button>
+
             <button
               onClick={onRefresh}
               disabled={isLoading}
@@ -152,6 +197,51 @@ export const Header: React.FC<HeaderProps> = ({
               {darkMode ? <Sun className="w-4 h-4 text-amber-400" /> : <Moon className="w-4 h-4" />}
             </button>
           </div>
+
+          {/* Hidden File Input for Restore */}
+          <input
+            type="file"
+            ref={fileInputRef}
+            onChange={handleFileChange}
+            accept=".json,application/json"
+            className="hidden"
+          />
+
+          {/* Backup & Restore Dropdown Menu */}
+          {showSettingsMenu && (
+            <div
+              ref={menuRef}
+              className="absolute right-0 top-11 sm:top-12 z-50 w-56 rounded-2xl bg-white dark:bg-[#1a1c23] shadow-xl border border-gray-100 dark:border-white/10 p-1.5 text-xs animate-in fade-in slide-in-from-top-2 duration-150"
+            >
+              <div className="px-3 py-2 border-b border-gray-100 dark:border-white/5 mb-1">
+                <p className="font-bold text-gray-900 dark:text-white">데이터 백업 및 복원</p>
+                <p className="text-[11px] text-gray-400 mt-0.5">폴더링과 메모를 안전하게 보관하세요</p>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => {
+                  if (onBackup) onBackup();
+                  setShowSettingsMenu(false);
+                }}
+                className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-white/5 transition-colors font-medium"
+              >
+                <Download className="w-4 h-4 text-blue-500" />
+                <span>설정 백업 (.json 다운로드)</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  fileInputRef.current?.click();
+                }}
+                className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-white/5 transition-colors font-medium"
+              >
+                <Upload className="w-4 h-4 text-emerald-500" />
+                <span>백업 파일 복원 (.json 업로드)</span>
+              </button>
+            </div>
+          )}
 
         </div>
 

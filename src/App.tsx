@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { 
   ProjectItem, 
   Folder 
@@ -19,7 +19,9 @@ import {
   saveProjectOrder,
   triggerAutoCloudSave,
   syncWithCloudOnStartup,
-  onSyncStatusChange
+  onSyncStatusChange,
+  downloadBackupConfigFile,
+  restoreBackupConfigFile
 } from './services/github';
 import { Header } from './components/Header';
 import { FolderTabs } from './components/FolderTabs';
@@ -149,7 +151,7 @@ export function App() {
   }, [username]);
 
   // Manual Refresh Handler: pulls latest cloud config AND forces repo re-fetch
-  const handleManualRefresh = async () => {
+  const handleManualRefresh = useCallback(async () => {
     setIsLoading(true);
     try {
       const remote = await syncWithCloudOnStartup();
@@ -167,10 +169,30 @@ export function App() {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [username]);
 
-  // Folder Operations
-  const handleAddFolder = (name: string) => {
+  // Backup & Restore Handlers
+  const handleBackup = useCallback(() => {
+    downloadBackupConfigFile();
+  }, []);
+
+  const handleRestore = useCallback(async (file: File) => {
+    setIsLoading(true);
+    setErrorMsg(null);
+    try {
+      const restored = await restoreBackupConfigFile(file);
+      if (restored.folders) setFolders(restored.folders);
+      if (restored.pinnedIds) setPinnedIds(restored.pinnedIds);
+      await loadData(username, true);
+    } catch (err: any) {
+      setErrorMsg(err.message || '백업 복원에 실패했습니다.');
+    } finally {
+      setIsLoading(false);
+    }
+  }, [username]);
+
+  // Folder Operations (Memoized with useCallback)
+  const handleAddFolder = useCallback((name: string) => {
     const newFolder: Folder = {
       id: `folder-${Date.now()}`,
       name,
@@ -179,14 +201,12 @@ export function App() {
     setFolders(updated);
     setActiveFolderId(newFolder.id);
     triggerAutoCloudSave();
-  };
+  }, []);
 
-  const handleDeleteFolder = (id: string) => {
+  const handleDeleteFolder = useCallback((id: string) => {
     const updated = deleteFolder(id);
     setFolders(updated);
-    if (activeFolderId === id) {
-      setActiveFolderId('all');
-    }
+    setActiveFolderId(prev => (prev === id ? 'all' : prev));
     setProjects(prev => prev.map(p => {
       if (p.folderId === id) {
         setProjectFolder(p.id, 'default');
@@ -195,15 +215,15 @@ export function App() {
       return p;
     }));
     triggerAutoCloudSave();
-  };
+  }, []);
 
-  const handleReorderFolders = (newFolders: Folder[]) => {
+  const handleReorderFolders = useCallback((newFolders: Folder[]) => {
     setFolders(newFolders);
     saveFoldersOrder(newFolders);
     triggerAutoCloudSave();
-  };
+  }, []);
 
-  const handleProjectFolderChange = (projectId: string | number, newFolderId: string) => {
+  const handleProjectFolderChange = useCallback((projectId: string | number, newFolderId: string) => {
     setProjectFolder(projectId, newFolderId);
     setProjects(prev => prev.map(p => {
       if (String(p.id) === String(projectId)) {
@@ -212,25 +232,27 @@ export function App() {
       return p;
     }));
     triggerAutoCloudSave();
-  };
+  }, []);
 
   // Drag & drop project reordering
-  const handleReorderProject = (sourceId: string | number, targetId: string | number) => {
-    const sourceIndex = projects.findIndex(p => String(p.id) === String(sourceId));
-    const targetIndex = projects.findIndex(p => String(p.id) === String(targetId));
-    if (sourceIndex === -1 || targetIndex === -1 || sourceIndex === targetIndex) return;
+  const handleReorderProject = useCallback((sourceId: string | number, targetId: string | number) => {
+    setProjects(prev => {
+      const sourceIndex = prev.findIndex(p => String(p.id) === String(sourceId));
+      const targetIndex = prev.findIndex(p => String(p.id) === String(targetId));
+      if (sourceIndex === -1 || targetIndex === -1 || sourceIndex === targetIndex) return prev;
 
-    const updated = [...projects];
-    const [moved] = updated.splice(sourceIndex, 1);
-    updated.splice(targetIndex, 0, moved);
+      const updated = [...prev];
+      const [moved] = updated.splice(sourceIndex, 1);
+      updated.splice(targetIndex, 0, moved);
 
-    setProjects(updated);
-    saveProjectOrder(updated.map(p => p.id));
-    triggerAutoCloudSave();
-  };
+      saveProjectOrder(updated.map(p => p.id));
+      triggerAutoCloudSave();
+      return updated;
+    });
+  }, []);
 
   // Pin Toggle: pins item and moves it to the top of its folder
-  const handleTogglePin = (projectId: string | number) => {
+  const handleTogglePin = useCallback((projectId: string | number) => {
     const updated = togglePinnedId(projectId);
     setPinnedIds(updated);
     const isNowPinned = updated.includes(String(projectId));
@@ -262,16 +284,16 @@ export function App() {
       return updatedProjects;
     });
     triggerAutoCloudSave();
-  };
+  }, []);
 
   // Folder Collapse Toggle
-  const handleToggleCollapse = (folderId: string) => {
+  const handleToggleCollapse = useCallback((folderId: string) => {
     const updated = toggleCollapsedFolder(folderId);
     setCollapsedFolders(updated);
-  };
+  }, []);
 
   // Description Change
-  const handleDescriptionChange = (projectId: string | number, newDesc: string) => {
+  const handleDescriptionChange = useCallback((projectId: string | number, newDesc: string) => {
     setCustomDescription(projectId, newDesc);
     setProjects(prev => prev.map(p => {
       if (String(p.id) === String(projectId)) {
@@ -280,7 +302,7 @@ export function App() {
       return p;
     }));
     triggerAutoCloudSave();
-  };
+  }, []);
 
   // Always show deployed projects
   const deployedProjects = useMemo(() => {
@@ -375,6 +397,8 @@ export function App() {
         isLoading={isLoading}
         totalDeployed={totalDeployed}
         syncStatus={syncStatus}
+        onBackup={handleBackup}
+        onRestore={handleRestore}
       />
 
       <main className="max-w-6xl mx-auto px-3.5 sm:px-8 py-4 sm:py-8 space-y-4 sm:space-y-6">

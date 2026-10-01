@@ -184,6 +184,88 @@ export function applyFullConfig(config: AppConfig): void {
   }
 }
 
+// Conflict-Free Smart Merge across multi-devices
+export function smartMergeConfig(local: AppConfig, remote: AppConfig): AppConfig {
+  if (!local) return remote;
+  if (!remote) return local;
+
+  const folderMap = new Map<string, Folder>();
+  DEFAULT_FOLDERS.forEach(f => folderMap.set(f.id, f));
+  (remote.folders || []).forEach(f => folderMap.set(f.id, f));
+  (local.folders || []).forEach(f => {
+    if (!folderMap.has(f.id)) {
+      folderMap.set(f.id, f);
+    }
+  });
+
+  const mergedProjectFolders: Record<string, string> = {
+    ...(remote.projectFolders || {}),
+    ...(local.projectFolders || {}),
+  };
+
+  const pinSet = new Set<string>([
+    ...(remote.pinnedIds || []),
+    ...(local.pinnedIds || []),
+  ]);
+
+  const mergedDescriptions: Record<string, string> = {
+    ...(remote.customDescriptions || {}),
+    ...(local.customDescriptions || {}),
+  };
+
+  const localTime = new Date(local.updatedAt || 0).getTime();
+  const remoteTime = new Date(remote.updatedAt || 0).getTime();
+  const latestUpdated = remoteTime > localTime ? remote.updatedAt : local.updatedAt;
+
+  return {
+    version: 1,
+    updatedAt: latestUpdated || new Date().toISOString(),
+    folders: Array.from(folderMap.values()),
+    projectFolders: mergedProjectFolders,
+    pinnedIds: Array.from(pinSet),
+    projectOrder: remote.projectOrder && remote.projectOrder.length > 0 ? remote.projectOrder : local.projectOrder || [],
+    customDescriptions: mergedDescriptions,
+  };
+}
+
+// Download current settings as JSON backup file
+export function downloadBackupConfigFile(): void {
+  const config = exportFullConfig();
+  const blob = new Blob([JSON.stringify(config, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  const dateStr = new Date().toISOString().slice(0, 10);
+  a.href = url;
+  a.download = `gitdeploy-backup-${dateStr}.json`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+// Restore settings from user-provided JSON backup file
+export async function restoreBackupConfigFile(file: File): Promise<AppConfig> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const text = e.target?.result as string;
+        const parsed: AppConfig = JSON.parse(text);
+        if (!parsed || !Array.isArray(parsed.folders)) {
+          throw new Error('올바른 백업 파일 형식이 아닙니다.');
+        }
+        applyFullConfig(parsed);
+        triggerAutoCloudSave();
+        resolve(parsed);
+      } catch (err: any) {
+        reject(err.message || '파일을 파싱할 수 없습니다.');
+      }
+    };
+    reader.onerror = () => reject(new Error('파일을 읽는 도중 오류가 발생했습니다.'));
+    reader.readAsText(file);
+  });
+}
+
 export function getGitHubToken(): string {
   try {
     return localStorage.getItem('gitdeploy_gh_pat') || '';
@@ -262,11 +344,13 @@ export async function syncWithCloudOnStartup(): Promise<AppConfig | null> {
     const localUpdated = localStorage.getItem('gitdeploy_config_updated_at');
 
     // If mobile / viewing device (no write token), ALWAYS sync with remote!
-    // If on PC (has write token), sync if remote is newer or local is empty!
+    // If on PC (has write token), smart merge if remote has newer or differing data
     if (!hasWriteToken || !localUpdated || new Date(remote.updatedAt).getTime() > new Date(localUpdated).getTime()) {
-      applyFullConfig(remote);
-      localStorage.setItem('gitdeploy_config_updated_at', remote.updatedAt);
-      return remote;
+      const local = exportFullConfig();
+      const merged = smartMergeConfig(local, remote);
+      applyFullConfig(merged);
+      localStorage.setItem('gitdeploy_config_updated_at', merged.updatedAt);
+      return merged;
     }
   } catch (e) {
     console.warn('Failed cloud sync on startup', e);
