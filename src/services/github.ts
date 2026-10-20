@@ -366,7 +366,7 @@ export async function fetchRemoteConfig(): Promise<AppConfig | null> {
   // 1. Try GitHub Contents API directly (real-time, ZERO CDN caching delay, public repository)
   try {
     const apiUrl = `https://api.github.com/repos/${owner}/${repo}/contents/public/config.json?ref=main&_t=${timestamp}`;
-    const apiRes = await fetch(apiUrl, { cache: 'no-store' });
+    const apiRes = await fetch(apiUrl, { cache: 'no-store', signal: AbortSignal.timeout(2000) });
     if (apiRes.ok) {
       const data = await apiRes.json();
       if (data && data.content) {
@@ -383,7 +383,7 @@ export async function fetchRemoteConfig(): Promise<AppConfig | null> {
 
   // 2. Try raw GitHub file as fallback
   try {
-    const rawRes = await fetch(`https://raw.githubusercontent.com/${owner}/${repo}/main/public/config.json?_t=${timestamp}`, { cache: 'no-store' });
+    const rawRes = await fetch(`https://raw.githubusercontent.com/${owner}/${repo}/main/public/config.json?_t=${timestamp}`, { cache: 'no-store', signal: AbortSignal.timeout(2000) });
     if (rawRes.ok) {
       const rawData = await rawRes.json();
       if (rawData && rawData.version) return rawData;
@@ -394,7 +394,7 @@ export async function fetchRemoteConfig(): Promise<AppConfig | null> {
 
   // 3. Try relative config.json on GitHub Pages
   try {
-    const res = await fetch(`./config.json?_t=${timestamp}`, { cache: 'no-store' });
+    const res = await fetch(`./config.json?_t=${timestamp}`, { cache: 'no-store', signal: AbortSignal.timeout(2000) });
     if (res.ok) {
       const data = await res.json();
       if (data && data.version) return data;
@@ -529,6 +529,64 @@ export async function fetchGitHubUser(username: string): Promise<GitHubUser> {
   return await res.json();
 }
 
+
+export function mapRawReposToProjects(rawRepos: any[], username: string): ProjectItem[] {
+  const folderMap = getProjectFolderMap();
+  const pinnedIds = getPinnedIds();
+  const descMap = getCustomDescriptionMap();
+
+  return (rawRepos || []).map((repo: any) => {
+    let deployUrl: string | null = null;
+
+    if (repo.homepage && typeof repo.homepage === 'string') {
+      const clean = repo.homepage.trim();
+      if (clean.length > 0 && !clean.includes(repo.html_url) && clean.startsWith('http')) {
+        deployUrl = clean;
+      }
+    }
+
+    if (!deployUrl && repo.has_pages) {
+      deployUrl = `https://${username}.github.io/${repo.name}/`;
+    }
+
+    const platform = detectPlatform(deployUrl);
+    const assignedFolder = folderMap[String(repo.id)] || 'default';
+    const isPinned = pinnedIds.includes(String(repo.id));
+    const customDesc = descMap[String(repo.id)];
+    const description = customDesc !== undefined ? customDesc : (repo.description || '');
+
+    return {
+      id: repo.id,
+      name: repo.name,
+      fullName: repo.full_name,
+      description,
+      deployUrl,
+      repoUrl: repo.html_url,
+      platform,
+      language: repo.language,
+      folderId: assignedFolder,
+      isPinned,
+      updatedAt: repo.updated_at,
+    };
+  });
+}
+
+export function getCachedProjects(username: string): ProjectItem[] {
+  try {
+    const cacheKey = `${CACHE_PREFIX}raw_repos_${username}`;
+    const cached = localStorage.getItem(cacheKey);
+    if (cached) {
+      const { data } = JSON.parse(cached);
+      if (Array.isArray(data) && data.length > 0) {
+        return mapRawReposToProjects(data, username);
+      }
+    }
+  } catch {
+    // ignore
+  }
+  return [];
+}
+
 export async function fetchGitHubRepos(username: string, force = false): Promise<ProjectItem[]> {
   const cacheKey = `${CACHE_PREFIX}raw_repos_${username}`;
   let rawRepos: any[] | null = null;
@@ -558,6 +616,7 @@ export async function fetchGitHubRepos(username: string, force = false): Promise
 
     try {
       const res = await fetch(`https://api.github.com/users/${username}/repos?per_page=100&sort=updated`, {
+        signal: AbortSignal.timeout(2500),
         headers,
       });
 
@@ -636,45 +695,5 @@ export async function fetchGitHubRepos(username: string, force = false): Promise
     throw new Error('GitHub API 호출 한도(시간당 60회)를 초과했습니다. 잠시 후 다시 새로고침 해주세요.');
   }
 
-  // Always apply the latest user settings (folder, pin, description) in real-time
-  const folderMap = getProjectFolderMap();
-  const pinnedIds = getPinnedIds();
-  const descMap = getCustomDescriptionMap();
-
-  const projects: ProjectItem[] = (rawRepos || []).map((repo: any) => {
-    let deployUrl: string | null = null;
-
-    if (repo.homepage && typeof repo.homepage === 'string') {
-      const clean = repo.homepage.trim();
-      if (clean.length > 0 && !clean.includes(repo.html_url) && clean.startsWith('http')) {
-        deployUrl = clean;
-      }
-    }
-
-    if (!deployUrl && repo.has_pages) {
-      deployUrl = `https://${username}.github.io/${repo.name}/`;
-    }
-
-    const platform = detectPlatform(deployUrl);
-    const assignedFolder = folderMap[String(repo.id)] || 'default';
-    const isPinned = pinnedIds.includes(String(repo.id));
-    const customDesc = descMap[String(repo.id)];
-    const description = customDesc !== undefined ? customDesc : (repo.description || '');
-
-    return {
-      id: repo.id,
-      name: repo.name,
-      fullName: repo.full_name,
-      description,
-      deployUrl,
-      repoUrl: repo.html_url,
-      platform,
-      language: repo.language,
-      folderId: assignedFolder,
-      isPinned,
-      updatedAt: repo.updated_at,
-    };
-  });
-
-  return projects;
+  return mapRawReposToProjects(rawRepos || [], username);
 }

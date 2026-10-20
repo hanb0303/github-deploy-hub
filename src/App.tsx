@@ -21,7 +21,8 @@ import {
   syncWithCloudOnStartup,
   onSyncStatusChange,
   downloadBackupConfigFile,
-  restoreBackupConfigFile
+  restoreBackupConfigFile,
+  getCachedProjects
 } from './services/github';
 import { Header } from './components/Header';
 import { FolderTabs } from './components/FolderTabs';
@@ -41,11 +42,26 @@ export function App() {
     return params.get('user') || DEFAULT_USERNAME;
   });
 
-  const [projects, setProjects] = useState<ProjectItem[]>([]);
+  // Instant 0ms cached projects initialization
+  const initialCached = useMemo(() => {
+    const cached = getCachedProjects(username);
+    const savedOrder = getProjectOrder();
+    if (savedOrder.length > 0 && cached.length > 0) {
+      const orderMap = new Map(savedOrder.map((id, index) => [id, index]));
+      cached.sort((a, b) => {
+        const orderA = orderMap.has(String(a.id)) ? orderMap.get(String(a.id))! : 9999;
+        const orderB = orderMap.has(String(b.id)) ? orderMap.get(String(b.id))! : 9999;
+        return orderA - orderB;
+      });
+    }
+    return cached;
+  }, [username]);
+
+  const [projects, setProjects] = useState<ProjectItem[]>(() => initialCached);
   const [folders, setFolders] = useState<Folder[]>(getFolders());
   const [activeFolderId, setActiveFolderId] = useState<string>('all');
   const [search, setSearch] = useState<string>('');
-  const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [isLoading, setIsLoading] = useState<boolean>(() => initialCached.length === 0);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [syncStatus, setSyncStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
 
@@ -115,13 +131,22 @@ export function App() {
     let isMounted = true;
 
     async function init() {
-      setIsLoading(true);
+      const hasInitial = initialCached.length > 0;
+      if (!hasInitial) {
+        setIsLoading(true);
+      }
       setErrorMsg(null);
 
-      // Step 1: Real-time pull from cloud (bypasses CDN cache, ensures mobile gets latest PC changes)
       try {
-        const remote = await syncWithCloudOnStartup();
-        if (remote && isMounted) {
+        // Parallel non-blocking fetch: cloud sync + repos simultaneously!
+        const [remote, repos] = await Promise.all([
+          syncWithCloudOnStartup(),
+          fetchGitHubRepos(username, false)
+        ]);
+
+        if (!isMounted) return;
+
+        if (remote) {
           if (Array.isArray(remote.folders) && remote.folders.length > 0) {
             setFolders(remote.folders);
           }
@@ -129,13 +154,26 @@ export function App() {
             setPinnedIds(remote.pinnedIds);
           }
         }
-      } catch (e) {
-        console.warn('Initial cloud sync error:', e);
-      }
 
-      // Step 2: Load projects with fresh cloud folder mapping
-      if (isMounted) {
-        await loadData(username, false);
+        const savedOrder = getProjectOrder();
+        if (savedOrder.length > 0) {
+          const orderMap = new Map(savedOrder.map((id, index) => [id, index]));
+          repos.sort((a, b) => {
+            const orderA = orderMap.has(String(a.id)) ? orderMap.get(String(a.id))! : 9999;
+            const orderB = orderMap.has(String(b.id)) ? orderMap.get(String(b.id))! : 9999;
+            return orderA - orderB;
+          });
+        }
+        setProjects(repos);
+      } catch (e: any) {
+        console.warn('Initial load notice:', e);
+        if (!hasInitial) {
+          setErrorMsg(e.message || '데이터를 불러오지 못했습니다.');
+        }
+      } finally {
+        if (isMounted) {
+          setIsLoading(false);
+        }
       }
     }
 
